@@ -1,0 +1,138 @@
+{
+  "models": {
+    "deepseek-coder-6.7b": {
+      "name": "DeepSeek Coder 6.7B",
+      "hf_repo": "deepseek-ai/deepseek-coder-6.7b-instruct",
+      "type": "code",
+      "parameters": "6.7B",
+      "context_length": 16384,
+      "supported_formats": ["fp16", "int4-awq", "int4-gptq"],
+      "default_format": "fp16",
+      "gpu_memory_required_gb": 14,
+      "recommended_gpu": "A100-40GB"
+    },
+    "deepseek-coder-33b": {
+      "name": "DeepSeek Coder 33B",
+      "hf_repo": "deepseek-ai/deepseek-coder-33b-instruct",
+      "type": "code",
+      "parameters": "33B",
+      "context_length": 16384,
+      "supported_formats": ["fp16", "int4-awq", "int4-gptq"],
+      "default_format": "fp16",
+      "gpu_memory_required_gb": 66,
+      "recommended_gpu": "A100-80GB"
+    },
+    "starcoder2-7b": {
+      "name": "StarCoder2 7B",
+      "hf_repo": "bigcode/starcoder2-7b",
+      "type": "code",
+      "parameters": "7B",
+      "context_length": 16384,
+      "supported_formats": ["fp16", "int4-awq"],
+      "default_format": "fp16",
+      "gpu_memory_required_gb": 14,
+      "recommended_gpu": "A100-40GB"
+    },
+    "starcoder2-15b": {
+      "name": "StarCoder2 15B",
+      "hf_repo": "bigcode/starcoder2-15b",
+      "type": "code",
+      "parameters": "15B",
+      "context_length": 16384,
+      "supported_formats": ["fp16", "int4-awq"],
+      "default_format": "fp16",
+      "gpu_memory_required_gb": 30,
+      "recommended_gpu": "A100-40GB"
+    },
+    "codellama-7b": {
+      "name": "CodeLlama 7B",
+      "hf_repo": "codellama/CodeLlama-7b-Instruct-hf",
+      "type": "code",
+      "parameters": "7B",
+      "context_length": 16384,
+      "supported_formats": ["fp16", "int4-awq", "int4-gptq"],
+      "default_format": "fp16",
+      "gpu_memory_required_gb": 14,
+      "recommended_gpu": "A100-40GB"
+    },
+    "codellama-13b": {
+      "name": "CodeLlama 13B",
+      "hf_repo": "codellama/CodeLlama-13b-Instruct-hf",
+      "type": "code",
+      "parameters": "13B",
+      "context_length": 16384,
+      "supported_formats": ["fp16", "int4-awq", "int4-gptq"],
+      "default_format": "fp16",
+      "gpu_memory_required_gb": 26,
+      "recommended_gpu": "A100-40GB"
+    },
+    "codellama-34b": {
+      "name": "CodeLlama 34B",
+      "hf_repo": "codellama/CodeLlama-34b-Instruct-hf",
+      "type": "code",
+      "parameters": "34B",
+      "context_length": 16384,
+      "supported_formats": ["fp16", "int4-awq", "int4-gptq"],
+      "default_format": "fp16",
+      "gpu_memory_required_gb": 68,
+      "recommended_gpu": "A100-80GB"
+    },
+    "qwen2.5-coder-7b": {
+      "name": "Qwen2.5 Coder 7B",
+      "hf_repo": "Qwen/Qwen2.5-Coder-7B-Instruct",
+      "type": "code",
+      "parameters": "7B",
+      "context_length": 131072,
+      "supported_formats": ["fp16", "int4-awq", "int4-gptq"],
+      "default_format": "fp16",
+      "gpu_memory_required_gb": 14,
+      "recommended_gpu": "A100-40GB"
+    },
+    "qwen2.5-coder-14b": {
+      "name": "Qwen2.5 Coder 14B",
+      "hf_repo": "Qwen/Qwen2.5-Coder-14B-Instruct",
+      "type": "code",
+      "parameters": "14B",
+      "context_length": 131072,
+      "supported_formats": ["fp16", "int4-awq", "int4-gptq"],
+      "default_format": "fp16",
+      "gpu_memory_required_gb": 28,
+      "recommended_gpu": "A100-40GB"
+    },
+    "qwen2.5-coder-32b": {
+      "name": "Qwen2.5 Coder 32B",
+      "hf_repo": "Qwen/Qwen2.5-Coder-32B-Instruct",
+      "type": "code",
+      "parameters": "32B",
+      "context_length": 131072,
+      "supported_formats": ["fp16", "int4-awq", "int4-gptq"],
+      "default_format": "fp16",
+      "gpu_memory_required_gb": 64,
+      "recommended_gpu": "A100-80GB"
+    }
+  },
+  "quantized_models": {
+    "deepseek-coder-6.7b-awq": {
+      "base_model": "deepseek-coder-6.7b",
+      "hf_repo": "TheBloke/deepseek-coder-6.7B-instruct-AWQ",
+      "quantization": "AWQ",
+      "bits": 4,
+      "gpu_memory_required_gb": 4
+    },
+    "codellama-7b-gptq": {
+      "base_model": "codellama-7b",
+      "hf_repo": "TheBloke/CodeLlama-7B-Instruct-GPTQ",
+      "quantization": "GPTQ",
+      "bits": 4,
+      "gpu_memory_required_gb": 4
+    },
+    "codellama-13b-gptq": {
+      "base_model": "codellama-13b",
+      "hf_repo": "TheBloke/CodeLlama-13B-Instruct-GPTQ",
+      "quantization": "GPTQ",
+      "bits": 4,
+      "gpu_memory_required_gb": 8
+    }
+  },
+  "default_model": "qwen2.5-coder-7b"
+}

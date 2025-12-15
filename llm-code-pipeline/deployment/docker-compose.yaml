@@ -1,0 +1,124 @@
+# Docker Compose configuration for LLM Code Pipeline
+# Provides both development and production setups
+
+version: '3.8'
+
+services:
+  # API Server (without GPU - for testing/development)
+  api:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - LLM_PIPELINE_MOCK_MODE=true
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LOG_LEVEL=INFO
+      - CORS_ORIGINS=*
+    volumes:
+      - ../../logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    profiles:
+      - dev
+      - mock
+
+  # Full Inference Server (with GPU)
+  inference:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile.inference
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_PATH=${MODEL_PATH:-Qwen/Qwen2.5-Coder-7B-Instruct}
+      - TENSOR_PARALLEL_SIZE=${TENSOR_PARALLEL_SIZE:-1}
+      - GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.9}
+      - MAX_MODEL_LEN=${MAX_MODEL_LEN:-}
+      - DTYPE=${DTYPE:-float16}
+      - QUANTIZATION=${QUANTIZATION:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - model-cache:/app/downloaded_models
+      - ../../logs:/app/logs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 300s  # Model loading can take time
+    restart: unless-stopped
+    profiles:
+      - prod
+      - gpu
+
+  # Model downloader utility
+  model-downloader:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile.api
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - model-cache:/app/downloaded_models
+    command: ["python", "-m", "models.download", "${MODEL_ID:-Qwen/Qwen2.5-Coder-7B-Instruct}", "-o", "/app/downloaded_models"]
+    profiles:
+      - download
+
+  # Prometheus metrics (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana dashboards (optional)
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+volumes:
+  model-cache:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+networks:
+  default:
+    name: llm-pipeline-network

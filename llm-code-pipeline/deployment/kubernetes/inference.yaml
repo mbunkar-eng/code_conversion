@@ -1,0 +1,235 @@
+# Kubernetes deployment for LLM Inference Server (with GPU)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-inference
+  namespace: llm-pipeline
+  labels:
+    app: llm-inference
+spec:
+  replicas: 1  # Scale based on GPU availability
+  selector:
+    matchLabels:
+      app: llm-inference
+  template:
+    metadata:
+      labels:
+        app: llm-inference
+    spec:
+      # Node selector for GPU nodes
+      nodeSelector:
+        accelerator: nvidia-gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: inference
+          image: llm-pipeline/inference:latest
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: MODEL_PATH
+              value: "Qwen/Qwen2.5-Coder-7B-Instruct"
+            - name: TENSOR_PARALLEL_SIZE
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-pipeline-config
+                  key: TENSOR_PARALLEL_SIZE
+            - name: GPU_MEMORY_UTILIZATION
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-pipeline-config
+                  key: GPU_MEMORY_UTILIZATION
+            - name: DTYPE
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-pipeline-config
+                  key: DTYPE
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-pipeline-config
+                  key: LOG_LEVEL
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-pipeline-secrets
+                  key: LLM_API_KEY
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llm-pipeline-secrets
+                  key: HF_TOKEN
+          resources:
+            requests:
+              cpu: "4"
+              memory: "32Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: "64Gi"
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: model-storage
+              mountPath: /app/downloaded_models
+            - name: shm
+              mountPath: /dev/shm
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: 8000
+            initialDelaySeconds: 300  # Model loading takes time
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 10
+      volumes:
+        - name: model-storage
+          persistentVolumeClaim:
+            claimName: model-storage
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+---
+# Service for Inference
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-inference
+  namespace: llm-pipeline
+spec:
+  selector:
+    app: llm-inference
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  type: ClusterIP
+---
+# Multi-GPU Deployment (tensor parallelism across GPUs)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-inference-multi-gpu
+  namespace: llm-pipeline
+  labels:
+    app: llm-inference
+    gpu-mode: multi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: llm-inference
+      gpu-mode: multi
+  template:
+    metadata:
+      labels:
+        app: llm-inference
+        gpu-mode: multi
+    spec:
+      nodeSelector:
+        accelerator: nvidia-gpu
+        gpu-count: "4"  # Node with 4 GPUs
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: inference
+          image: llm-pipeline/inference:latest
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: MODEL_PATH
+              value: "Qwen/Qwen2.5-Coder-32B-Instruct"  # Larger model
+            - name: TENSOR_PARALLEL_SIZE
+              value: "4"  # Use all 4 GPUs
+            - name: GPU_MEMORY_UTILIZATION
+              value: "0.9"
+            - name: DTYPE
+              value: "float16"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-pipeline-secrets
+                  key: LLM_API_KEY
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llm-pipeline-secrets
+                  key: HF_TOKEN
+          resources:
+            requests:
+              cpu: "16"
+              memory: "128Gi"
+              nvidia.com/gpu: "4"
+            limits:
+              cpu: "32"
+              memory: "256Gi"
+              nvidia.com/gpu: "4"
+          volumeMounts:
+            - name: model-storage
+              mountPath: /app/downloaded_models
+            - name: shm
+              mountPath: /dev/shm
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: 8000
+            initialDelaySeconds: 600
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 120
+            periodSeconds: 10
+      volumes:
+        - name: model-storage
+          persistentVolumeClaim:
+            claimName: model-storage
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Gi
+---
+# Pod Disruption Budget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: llm-inference-pdb
+  namespace: llm-pipeline
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: llm-inference
+---
+# ServiceMonitor for Prometheus (if using Prometheus Operator)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: llm-inference-monitor
+  namespace: llm-pipeline
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: llm-inference
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s

@@ -1,0 +1,134 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-code-pipeline"
+version = "1.0.0"
+description = "Internal LLM Pipeline for Code Generation & Code Conversion"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "LLM Code Pipeline Team"}
+]
+keywords = [
+    "llm",
+    "code-generation",
+    "code-conversion",
+    "openai-api",
+    "vllm",
+    "fastapi"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.5.0",
+    "httpx>=0.26.0",
+    "huggingface-hub>=0.20.0",
+    "transformers>=4.36.0",
+    "torch>=2.1.0",
+    "python-dotenv>=1.0.0",
+    "tqdm>=4.66.0",
+]
+
+[project.optional-dependencies]
+inference = [
+    "vllm>=0.3.0",
+    "accelerate>=0.25.0",
+    "triton>=2.1.0",
+]
+quantization = [
+    "autoawq>=0.1.8",
+    "auto-gptq>=0.6.0",
+    "bitsandbytes>=0.41.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.12.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+]
+all = [
+    "llm-code-pipeline[inference,quantization,dev]",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/llm-code-pipeline"
+Documentation = "https://github.com/your-org/llm-code-pipeline#readme"
+Repository = "https://github.com/your-org/llm-code-pipeline"
+Issues = "https://github.com/your-org/llm-code-pipeline/issues"
+
+[project.scripts]
+llm-pipeline = "api.main:main"
+llm-download = "models.download:main"
+llm-convert = "models.convert:main"
+llm-serve = "inference.server:main"
+
+[tool.setuptools.packages.find]
+include = ["api*", "models*", "inference*", "clients*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+    | \.venv
+    | __pycache__
+    | build
+    | dist
+)/
+'''
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # function call in default argument
+]
+
+[tool.ruff.isort]
+known-first-party = ["api", "models", "inference", "clients"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true

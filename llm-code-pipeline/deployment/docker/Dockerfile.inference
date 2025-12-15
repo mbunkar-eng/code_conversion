@@ -1,0 +1,77 @@
+# Dockerfile for LLM Code Pipeline Inference Server
+# Full inference server with vLLM and GPU support
+
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
+
+LABEL maintainer="LLM Code Pipeline"
+LABEL description="LLM Code Pipeline Inference Server with vLLM"
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-dev \
+    python3-pip \
+    build-essential \
+    curl \
+    git \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create symbolic links for python
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python3
+
+# Upgrade pip
+RUN python -m pip install --upgrade pip setuptools wheel
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements
+COPY requirements.txt .
+COPY requirements-inference.txt .
+
+# Install Python dependencies
+# Install PyTorch first with CUDA support
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install vLLM and other dependencies
+RUN pip install --no-cache-dir -r requirements-inference.txt
+
+# Copy application code
+COPY api/ ./api/
+COPY models/ ./models/
+COPY inference/ ./inference/
+COPY config/ ./config/
+
+# Create directories for models and logs
+RUN mkdir -p /app/downloaded_models /app/logs /app/data
+
+# Expose ports
+# 8000 - API server
+# 8001 - Metrics (optional)
+EXPOSE 8000 8001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Environment variables for runtime configuration
+ENV MODEL_PATH="" \
+    TENSOR_PARALLEL_SIZE=1 \
+    GPU_MEMORY_UTILIZATION=0.9 \
+    MAX_MODEL_LEN="" \
+    DTYPE="float16" \
+    QUANTIZATION="" \
+    LLM_API_KEY="" \
+    LOG_LEVEL="INFO"
+
+# Default command - starts the full inference server
+CMD ["python", "-m", "api.main", "--host", "0.0.0.0", "--port", "8000"]

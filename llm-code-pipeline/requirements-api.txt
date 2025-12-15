@@ -1,0 +1,27 @@
+# LLM Code Pipeline - API Server Requirements
+# Lightweight requirements for API-only deployment (no inference)
+# Install with: pip install -r requirements-api.txt
+
+# Web Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.0
+
+# HTTP Client
+httpx>=0.26.0
+
+# HuggingFace (for tokenizer only)
+huggingface-hub>=0.20.0
+transformers>=4.36.0
+
+# PyTorch CPU (minimal for tokenizer)
+torch>=2.1.0
+
+# Utilities
+python-dotenv>=1.0.0
+
+# JSON Schema Validation
+jsonschema>=4.20.0
+
+# Logging
+structlog>=23.2.0

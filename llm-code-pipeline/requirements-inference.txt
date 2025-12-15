@@ -1,0 +1,29 @@
+# LLM Code Pipeline - Full Inference Requirements
+# Requirements for GPU inference with vLLM
+# Install with: pip install -r requirements-inference.txt
+
+# Include base requirements
+-r requirements.txt
+
+# vLLM for GPU inference
+vllm>=0.3.0
+
+# CUDA support (torch with CUDA - install separately)
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Quantization support (optional)
+# autoawq>=0.1.8  # For AWQ quantization
+# auto-gptq>=0.6.0  # For GPTQ quantization
+
+# Additional transformers acceleration
+accelerate>=0.25.0
+bitsandbytes>=0.41.0
+
+# Flash Attention (optional, for faster inference)
+# flash-attn>=2.4.0  # Requires separate installation
+
+# Triton (for optimized kernels)
+triton>=2.1.0
+
+# Monitoring
+prometheus-client>=0.19.0

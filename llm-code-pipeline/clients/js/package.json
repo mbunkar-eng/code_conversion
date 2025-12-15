@@ -1,0 +1,35 @@
+{
+  "name": "@llm-pipeline/client",
+  "version": "1.0.0",
+  "description": "JavaScript/TypeScript client SDK for LLM Code Pipeline API",
+  "main": "client.js",
+  "module": "client.js",
+  "types": "client.d.ts",
+  "exports": {
+    ".": {
+      "import": "./client.js",
+      "require": "./client.js",
+      "types": "./client.d.ts"
+    }
+  },
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": [
+    "llm",
+    "openai",
+    "api",
+    "client",
+    "code-generation",
+    "ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": ""
+  }
+}

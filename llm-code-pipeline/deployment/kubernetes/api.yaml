@@ -1,0 +1,170 @@
+# Kubernetes deployment for LLM Code Pipeline API
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: llm-pipeline
+---
+# ConfigMap for configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llm-pipeline-config
+  namespace: llm-pipeline
+data:
+  LOG_LEVEL: "INFO"
+  CORS_ORIGINS: "*"
+  TENSOR_PARALLEL_SIZE: "1"
+  GPU_MEMORY_UTILIZATION: "0.9"
+  DTYPE: "float16"
+---
+# Secret for sensitive data
+apiVersion: v1
+kind: Secret
+metadata:
+  name: llm-pipeline-secrets
+  namespace: llm-pipeline
+type: Opaque
+stringData:
+  LLM_API_KEY: ""  # Set your API key here
+  HF_TOKEN: ""     # HuggingFace token for private models
+---
+# PersistentVolumeClaim for model storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-storage
+  namespace: llm-pipeline
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: standard  # Adjust based on your cluster
+---
+# API Deployment (mock mode - no GPU required)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-api-mock
+  namespace: llm-pipeline
+  labels:
+    app: llm-api
+    mode: mock
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: llm-api
+      mode: mock
+  template:
+    metadata:
+      labels:
+        app: llm-api
+        mode: mock
+    spec:
+      containers:
+        - name: api
+          image: llm-pipeline/api:latest
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: LLM_PIPELINE_MOCK_MODE
+              value: "true"
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-pipeline-config
+                  key: LOG_LEVEL
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-pipeline-secrets
+                  key: LLM_API_KEY
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+# Service for API
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-api
+  namespace: llm-pipeline
+spec:
+  selector:
+    app: llm-api
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  type: ClusterIP
+---
+# Ingress for external access
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: llm-api-ingress
+  namespace: llm-pipeline
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: llm-api.example.com  # Change to your domain
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: llm-api
+                port:
+                  number: 80
+---
+# HorizontalPodAutoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: llm-api-hpa
+  namespace: llm-pipeline
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: llm-api-mock
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
