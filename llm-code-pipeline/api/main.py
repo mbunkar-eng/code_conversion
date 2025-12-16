@@ -3,104 +3,78 @@ Main FastAPI application for LLM Code Pipeline.
 """
 
 import os
+import sys
 import logging
 from typing import Optional
 from contextlib import asynccontextmanager
+
+# Add the project root to the path when running as a script
+if __name__ == "__main__":
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .routes import chat_router, completions_router, health_router, models_router
-from .utils.logging import setup_logging, log_request
-from .utils.error_handler import error_handler, LLMPipelineError
+from api.routes import chat_router, completions_router, health_router, models_router
+from api.utils.logging import setup_logging, log_request
+from api.utils.error_handler import error_handler, LLMPipelineError
 
 logger = logging.getLogger(__name__)
 
 # Global instances
-_inference_runner = None
-_tokenizer_service = None
+_model_manager = None
+
+# Initialize model manager on import
+_init_done = False
+if not _init_done:
+    _init_done = True
+    print("DEBUG: Initializing model manager")
+    try:
+        from inference.model_manager import ModelManager
+        _model_manager = ModelManager()
+        print("DEBUG: Model manager initialized successfully")
+    except Exception as e:
+        print(f"DEBUG: Failed to initialize model manager: {e}")
+        import traceback
+        traceback.print_exc()
+        _model_manager = None
 
 
-def get_inference_runner():
-    """Get the global inference runner instance."""
-    return _inference_runner
+def get_model_manager():
+    """Get the global model manager instance."""
+    return _model_manager
 
 
-def get_tokenizer_service():
-    """Get the global tokenizer service instance."""
-    return _tokenizer_service
+def get_inference_runner(model_id: str):
+    """Get the inference runner for a specific model."""
+    if _model_manager is None:
+        return None
+    try:
+        runner, _ = _model_manager.get_or_load_model(model_id)
+        return runner
+    except Exception as e:
+        logger.error(f"Failed to get inference runner for model {model_id}: {e}")
+        return None
+
+
+def get_tokenizer_service(model_id: str):
+    """Get the tokenizer service for a specific model."""
+    if _model_manager is None:
+        return None
+    try:
+        _, tokenizer = _model_manager.get_or_load_model(model_id)
+        return tokenizer
+    except Exception as e:
+        logger.error(f"Failed to get tokenizer service for model {model_id}: {e}")
+        return None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    global _inference_runner, _tokenizer_service
-
-    # Setup logging
-    log_level = os.environ.get("LOG_LEVEL", "INFO")
-    json_logs = os.environ.get("JSON_LOGS", "false").lower() == "true"
-    setup_logging(level=log_level, json_format=json_logs)
-
-    logger.info("Starting LLM Code Pipeline API...")
-
-    # Initialize model if configured
-    model_path = os.environ.get("MODEL_PATH")
-    mock_mode = os.environ.get("LLM_PIPELINE_MOCK_MODE", "false").lower() == "true"
-
-    if mock_mode:
-        logger.info("Running in mock mode - no GPU required")
-        from inference.vllm_runner import MockVLLMRunner
-        from inference.tokenizer_service import MockTokenizerService
-
-        _inference_runner = MockVLLMRunner(model_path or "mock-model")
-        _inference_runner.initialize()
-
-        _tokenizer_service = MockTokenizerService(model_path or "mock-model")
-        _tokenizer_service.initialize()
-
-    elif model_path:
-        logger.info(f"Loading model from: {model_path}")
-
-        try:
-            from inference.vllm_runner import VLLMRunner
-            from inference.tokenizer_service import TokenizerService
-
-            # Get configuration from environment
-            tensor_parallel = int(os.environ.get("TENSOR_PARALLEL_SIZE", "1"))
-            gpu_memory_util = float(os.environ.get("GPU_MEMORY_UTILIZATION", "0.9"))
-            max_model_len = os.environ.get("MAX_MODEL_LEN")
-            max_model_len = int(max_model_len) if max_model_len else None
-            dtype = os.environ.get("DTYPE", "float16")
-            quantization = os.environ.get("QUANTIZATION")
-
-            _inference_runner = VLLMRunner(
-                model_path=model_path,
-                tensor_parallel_size=tensor_parallel,
-                gpu_memory_utilization=gpu_memory_util,
-                max_model_len=max_model_len,
-                dtype=dtype,
-                quantization=quantization
-            )
-            _inference_runner.initialize()
-
-            _tokenizer_service = TokenizerService(model_path)
-            _tokenizer_service.initialize()
-
-            logger.info("Model loaded successfully")
-
-        except Exception as e:
-            logger.error(f"Failed to load model: {e}")
-            # Continue without model - health endpoints will report not ready
-    else:
-        logger.warning("No MODEL_PATH configured - API will start without a model")
-
+    # Model is already loaded at import time
     yield
-
-    # Cleanup
-    logger.info("Shutting down LLM Code Pipeline API...")
-    if _inference_runner:
-        _inference_runner.shutdown()
 
 
 def create_app() -> FastAPI:

@@ -55,13 +55,16 @@ async def create_chat_completion(
     validate_messages(request.messages)
     validate_response_format(request.response_format)
 
-    # Get inference runner
+    # Get inference runner for the requested model
     from ..main import get_inference_runner, get_tokenizer_service
-    runner = get_inference_runner()
-    tokenizer = get_tokenizer_service()
+    runner = get_inference_runner(request.model)
+    tokenizer = get_tokenizer_service(request.model)
 
     if runner is None:
-        raise InferenceError("Inference engine not initialized")
+        raise InferenceError(f"Failed to load model: {request.model}")
+
+    if tokenizer is None:
+        raise InferenceError(f"Failed to load tokenizer for model: {request.model}")
 
     # Handle streaming
     if request.stream:
@@ -131,6 +134,14 @@ async def create_chat_completion(
         duration_ms=generation_time_ms
     )
 
+    # Get actual model name from loaded runner
+    model_info = runner.get_model_info()
+    actual_model = model_info.get("model_path", request.model)
+    if actual_model and "/" in actual_model:
+        actual_model = actual_model.split("/")[-1]
+    elif actual_model and "--" in actual_model:
+        actual_model = actual_model.split("--")[-1]
+
     # Build response
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
 
@@ -138,7 +149,7 @@ async def create_chat_completion(
         id=completion_id,
         object="chat.completion",
         created=int(time.time()),
-        model=request.model,
+        model=actual_model or request.model,
         choices=[
             ChatChoice(
                 index=0,

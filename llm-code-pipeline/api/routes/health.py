@@ -30,11 +30,12 @@ async def health_check():
     gpu_available = torch.cuda.is_available()
     gpu_count = torch.cuda.device_count() if gpu_available else 0
 
-    # Get model status from app state (set by main.py)
-    from ..main import get_inference_runner
-    runner = get_inference_runner()
-    model_loaded = runner is not None and runner._initialized
-    model_name = runner.model_path if model_loaded else None
+    # Get model status from model manager
+    from ..main import get_model_manager
+    manager = get_model_manager()
+    loaded_models = manager.list_loaded_models() if manager else []
+    model_loaded = len(loaded_models) > 0
+    model_name = loaded_models[0] if loaded_models else None
 
     return HealthResponse(
         status="healthy",
@@ -72,12 +73,15 @@ async def detailed_health_check(api_key: str = Depends(verify_api_key)):
                 "utilization_percent": round((memory_allocated / memory_total) * 100, 1)
             })
 
-    from ..main import get_inference_runner
-    runner = get_inference_runner()
+    from ..main import get_model_manager
+    manager = get_model_manager()
 
     model_info = None
-    if runner and runner._initialized:
-        model_info = runner.get_model_info()
+    if manager:
+        loaded_models = manager.list_loaded_models()
+        if loaded_models:
+            # Get info for the first loaded model
+            model_info = manager.get_model_info(loaded_models[0])
 
     uptime_seconds = time.time() - _startup_time
 
@@ -103,12 +107,13 @@ async def readiness_check():
 
     Returns 200 if service is ready to accept requests.
     """
-    from ..main import get_inference_runner
-    runner = get_inference_runner()
+    from ..main import get_model_manager
+    manager = get_model_manager()
 
-    if runner is None or not runner._initialized:
-        return {"ready": False, "reason": "Model not loaded"}
+    if manager is None:
+        return {"ready": False, "reason": "Model manager not initialized"}
 
+    # Service is ready if model manager is available (models load on demand)
     return {"ready": True}
 
 

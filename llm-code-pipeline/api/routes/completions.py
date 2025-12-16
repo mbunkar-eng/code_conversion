@@ -49,12 +49,12 @@ async def create_completion(
     for i, prompt in enumerate(prompts):
         validate_prompt(prompt)
 
-    # Get inference runner
+    # Get inference runner for the requested model
     from ..main import get_inference_runner
-    runner = get_inference_runner()
+    runner = get_inference_runner(request.model)
 
     if runner is None:
-        raise InferenceError("Inference engine not initialized")
+        raise InferenceError(f"Failed to load model: {request.model}")
 
     # Handle streaming
     if request.stream:
@@ -123,6 +123,14 @@ async def create_completion(
         duration_ms=generation_time_ms
     )
 
+    # Get actual model name from loaded runner
+    model_info = runner.get_model_info()
+    actual_model = model_info.get("model_path", request.model)
+    if actual_model and "/" in actual_model:
+        actual_model = actual_model.split("/")[-1]
+    elif actual_model and "--" in actual_model:
+        actual_model = actual_model.split("--")[-1]
+
     # Build response
     completion_id = f"cmpl-{uuid.uuid4().hex[:24]}"
 
@@ -130,7 +138,7 @@ async def create_completion(
         id=completion_id,
         object="text_completion",
         created=int(time.time()),
-        model=request.model,
+        model=actual_model or request.model,
         choices=choices,
         usage=Usage(
             prompt_tokens=total_prompt_tokens,
