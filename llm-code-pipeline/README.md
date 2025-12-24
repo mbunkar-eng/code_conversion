@@ -12,6 +12,7 @@ Internal LLM Pipeline for Code Generation & Code Conversion with OpenAI-compatib
 - **Multiple Models**: Support for DeepSeek Coder, StarCoder2, CodeLlama, Qwen2.5-Coder
 - **GPU Acceleration**: vLLM-powered inference with tensor parallelism
 - **Quantization**: INT4 AWQ/GPTQ support for reduced memory usage
+- **Web UI**: Streamlit-based interface for easy model management and chatting
 
 ## Quick Start
 
@@ -248,6 +249,60 @@ docker-compose --profile mock up -d
 # Start with monitoring
 docker-compose --profile gpu --profile monitoring up -d
 ```
+
+## Streamlit Web UI
+
+The project includes a beautiful Streamlit web interface for easy model management and chatting.
+
+### Features
+- **Model Management**: Download models from HuggingFace
+- **Chat Interface**: Interactive chat with downloaded models
+- **API Integration**: Uses the OpenAI-compatible API
+- **Real-time Responses**: Streaming responses from models
+
+### Running the UI
+
+#### Option 1: Docker (Recommended)
+```bash
+# Start API + UI
+cd deployment
+docker-compose --profile ui up
+
+# Access UI at: http://localhost:8501
+# Access API at: http://localhost:8000
+```
+
+#### Option 2: Local Development
+```bash
+# Install Streamlit
+pip install streamlit
+
+# Start API server first
+python -m api.main
+
+# Start UI in another terminal
+./run_streamlit.sh  # Linux/Mac
+# or: run_streamlit.bat  # Windows
+
+# Access UI at: http://localhost:8501
+```
+
+### UI Features
+
+#### 💬 Chat Tab
+- Select from downloaded models
+- Real-time chat interface
+- Message history
+- Streaming responses
+
+#### 📦 Models Tab
+- Download popular models from HuggingFace
+- View available local models
+- Model registry integration
+
+#### 📊 Analytics Tab
+- Usage statistics (coming soon)
+- Model performance metrics
 
 ## License
 

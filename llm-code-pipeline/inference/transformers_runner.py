@@ -4,6 +4,7 @@ Transformers Runner - CPU/MPS inference using HuggingFace Transformers.
 This runner is for Mac/CPU inference where vLLM is not available.
 It's slower but works on any machine.
 """
+import os
 
 import logging
 import time
@@ -80,6 +81,13 @@ class TransformersRunner:
         if self._initialized:
             return
 
+        # Check if in mock mode
+        mock_mode = os.environ.get("LLM_PIPELINE_MOCK_MODE", "false").lower() == "true"
+        if mock_mode:
+            logger.info(f"Running in MOCK MODE - skipping actual model loading for {self.model_path}")
+            self._initialized = True
+            return
+
         logger.info(f"Loading model {self.model_path} on {self.device}...")
         start_time = time.perf_counter()
 
@@ -146,6 +154,27 @@ class TransformersRunner:
         """
         if not self._initialized:
             self.initialize()
+
+        # Return mock response in mock mode
+        mock_mode = os.environ.get("LLM_PIPELINE_MOCK_MODE", "false").lower() == "true"
+        if mock_mode:
+            import random
+            mock_responses = [
+                "This is a mock response from the LLM. The model is running in mock mode for testing purposes.",
+                "Mock mode activated! This response is generated without loading the actual model.",
+                "Hello! I'm responding in mock mode. The real model would provide more detailed and accurate responses.",
+                "Mock response: Your query has been processed successfully. In a real deployment, this would be answered by the actual language model."
+            ]
+            mock_text = random.choice(mock_responses)
+            
+            result = GenerationResult(
+                text=mock_text,
+                prompt_tokens=len(prompt.split()) if isinstance(prompt, str) else sum(len(p.split()) for p in prompt),
+                completion_tokens=len(mock_text.split()),
+                total_tokens=len(prompt.split()) + len(mock_text.split()) if isinstance(prompt, str) else sum(len(p.split()) for p in prompt) + len(mock_text.split()),
+                finish_reason="stop"
+            )
+            return result if not is_batch else [result]
 
         config = config or GenerationConfig()
         is_batch = isinstance(prompt, list)

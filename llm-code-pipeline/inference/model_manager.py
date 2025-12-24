@@ -12,6 +12,7 @@ from models.download import ModelDownloader
 from models.registry import ModelRegistry
 from inference.transformers_runner import TransformersRunner
 from inference.tokenizer_service import TokenizerService
+from inference.vllm_runner import GenerationResult
 
 logger = logging.getLogger(__name__)
 
@@ -41,12 +42,17 @@ class ModelManager:
         self._loaded_models: Dict[str, tuple] = {}
         self._lock = threading.Lock()
 
+    @property
+    def mock_mode(self) -> bool:
+        """Check if running in mock mode (dynamic check)"""
+        return os.environ.get("LLM_PIPELINE_MOCK_MODE", "false").lower() == "true"
+
     def get_or_load_model(self, model_id: str) -> tuple:
         """
-        Get a loaded model or download and load it if not available.
+        Get a loaded model from local storage only (no downloading).
 
         Args:
-            model_id: Model identifier (registry name or HF repo)
+            model_id: Model identifier (registry name or local path)
 
         Returns:
             Tuple of (inference_runner, tokenizer_service)
@@ -60,29 +66,94 @@ class ModelManager:
             # Determine model path
             model_path = self._get_model_path(model_id)
 
-            # Download if not exists
-            if not Path(model_path).exists():
-                logger.info(f"Model {model_id} not found locally, downloading...")
-                result = self.downloader.download_model(model_id)
-                if not result.success:
-                    raise RuntimeError(f"Failed to download model {model_id}: {result.error}")
-                model_path = result.model_path
-                logger.info(f"Downloaded model to: {model_path}")
+            # Check if model exists locally and is complete
+            model_path_obj = Path(model_path)
+            if not model_path_obj.exists():
+                raise RuntimeError(f"Model {model_id} not found locally at {model_path}")
+            
+            # Skip completeness check in mock mode
+            if not self.mock_mode and not self.downloader._is_model_complete(model_path_obj):
+                raise RuntimeError(f"Model {model_id} exists but is incomplete at {model_path}")
 
             # Load the model
             logger.info(f"Loading model: {model_id} from {model_path}")
             try:
-                # Initialize runner
-                runner = TransformersRunner(
-                    model_path=model_path,
-                    device="auto",
-                    torch_dtype="float16"
-                )
-                runner.initialize()
+                # Check if in mock mode - return mock objects
+                if self.mock_mode:
+                    logger.info(f"Mock mode: Creating mock runner and tokenizer for {model_id}")
+                    # Create mock objects that behave like the real ones
+                    class MockRunner:
+                        def generate(self, prompt, config=None):
+                            import random
+                            import time
+                            mock_responses = [
+                                "This is a mock response from the LLM. The model is running in mock mode for testing purposes.",
+                                "Mock mode activated! This response is generated without loading the actual model.",
+                                "Hello! I'm responding in mock mode. The real model would provide more detailed and accurate responses.",
+                                "Mock response: Your query has been processed successfully. In a real deployment, this would be answered by the actual language model."
+                            ]
+                            mock_text = random.choice(mock_responses)
+                            prompt_tokens = len(prompt.split()) if isinstance(prompt, str) else sum(len(p.split()) for p in prompt)
+                            completion_tokens = len(mock_text.split())
+                            total_tokens = prompt_tokens + completion_tokens
+                            
+                            return GenerationResult(
+                                text=mock_text,
+                                finish_reason="stop",
+                                prompt_tokens=prompt_tokens,
+                                completion_tokens=completion_tokens,
+                                total_tokens=total_tokens,
+                                generation_time_ms=50.0,  # Mock generation time
+                                tokens_per_second=total_tokens / 0.05  # Mock tokens per second
+                            )
+                        
+                        async def generate_stream(self, prompt, config=None):
+                            # For simplicity, just return the non-streaming result
+                            yield self.generate(prompt, config)
+                        
+                        def get_model_info(self) -> dict:
+                            """Get mock model information."""
+                            return {
+                                "model_path": "mock_model",
+                                "device": "mock",
+                                "dtype": "mock",
+                                "status": "mock_initialized",
+                                "backend": "mock"
+                            }
+                    
+                    class MockTokenizer:
+                        def encode(self, text, **kwargs):
+                            from inference.tokenizer_service import TokenizationResult
+                            words = text.split()
+                            return TokenizationResult(
+                                tokens=list(range(1, len(words) + 1)),
+                                token_count=len(words),
+                                text=text
+                            )
+                        
+                        def apply_chat_template(self, messages, **kwargs):
+                            formatted = []
+                            for msg in messages:
+                                formatted.append(f"{msg.role.upper()}: {msg.content}")
+                            result = "\n".join(formatted)
+                            if kwargs.get('add_generation_prompt', False):
+                                result += "\nASSISTANT:"
+                            return result
+                    
+                    runner = MockRunner()
+                    tokenizer_service = MockTokenizer()
+                else:
+                    # Initialize runner
+                    runner = TransformersRunner(
+                        model_path=model_path,
+                        device="auto",
+                        torch_dtype="float16"
+                    )
+                    runner.initialize()
 
-                # Initialize tokenizer service
-                tokenizer_service = TokenizerService(model_path)
-                tokenizer_service.initialize()
+                    # Initialize tokenizer service
+                    tokenizer_service = TokenizerService(model_path)
+                    tokenizer_service.initialize()
 
                 # Cache the loaded model
                 self._loaded_models[model_id] = (runner, tokenizer_service)
@@ -93,6 +164,51 @@ class ModelManager:
             except Exception as e:
                 logger.error(f"Failed to load model {model_id}: {e}")
                 raise RuntimeError(f"Model loading failed: {e}")
+
+    def get_available_local_models(self) -> list[str]:
+        """
+        Get list of locally available complete models.
+        
+        Returns:
+            List of model identifiers that can be loaded
+        """
+        available_models = []
+        if not self.models_dir.exists():
+            return available_models
+            
+        for item in self.models_dir.iterdir():
+            if item.is_dir():
+                model_name = item.name
+                # In mock mode, consider all directories as available models
+                if self.mock_mode or self.downloader._is_model_complete(item):
+                    available_models.append(model_name)
+        
+        return available_models
+
+    def get_default_model(self) -> str:
+        """
+        Get the best available local model.
+        
+        Returns:
+            Model identifier to use as default
+        """
+        available = self.get_available_local_models()
+        if not available:
+            raise RuntimeError("No complete models available locally")
+        
+        # Prefer smaller models first for faster loading
+        preferences = [
+            "Qwen--Qwen2-0.5B-Instruct",  # Smallest and fastest
+            "Qwen--Qwen2.5-Coder-7B-Instruct",  # 7B model - good balance
+            "deepseek-ai--deepseek-coder-6.7b-instruct"  # Available local model
+        ]
+        
+        for pref in preferences:
+            if pref in available:
+                return pref
+                
+        # Fallback to first available
+        return available[0]
 
     def _get_model_path(self, model_id: str) -> str:
         """
@@ -111,6 +227,11 @@ class ModelManager:
             hf_repo = model_info.hf_repo
             model_name = hf_repo.replace("/", "--")
             return str(self.models_dir / model_name)
+
+        # Check if it's already in local format (contains --)
+        if "--" in model_id:
+            # Assume it's already the local folder name
+            return str(self.models_dir / model_id)
 
         # Assume it's a direct HF repo name
         if "/" in model_id:

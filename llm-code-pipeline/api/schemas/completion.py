@@ -16,10 +16,14 @@ class CompletionRequest(BaseModel):
 
     Legacy completions API - for simpler prompt-in, text-out use cases.
     """
-    model: str = Field(..., description="Model to use for completion")
-    prompt: Union[str, list[str]] = Field(
-        ...,
-        description="Prompt(s) to complete"
+    model: Optional[str] = Field(None, description="Model to use for completion (optional, uses default if not specified)")
+    prompt: Optional[Union[str, list[str]]] = Field(
+        None,
+        description="Prompt(s) to complete (legacy format)"
+    )
+    content: Optional[str] = Field(
+        None,
+        description="Simplified content field (alternative to prompt)"
     )
     suffix: Optional[str] = Field(
         default=None,
@@ -98,14 +102,33 @@ class CompletionRequest(BaseModel):
 
     class Config:
         json_schema_extra = {
-            "example": {
-                "model": "qwen2.5-coder-7b",
-                "prompt": "Convert this Python code to Java:\ndef hello():\n    print('Hello')\n\n// Java code:",
-                "max_tokens": 300,
-                "temperature": 0.2,
-                "stop": ["\n\n", "```"]
-            }
+            "examples": [
+                {
+                    "content": "Convert this Python to Java:\ndef hello():\n    print('Hello')",
+                  
+                },
+                {
+                    "model": "qwen2.5-coder-7b",
+                    "prompt": "Convert this Python code to Java:\ndef hello():\n    print('Hello')\n\n// Java code:",
+                    "max_tokens": 300,
+                    "temperature": 0.2,
+                    "stop": ["\n\n", "```"]
+                }
+            ]
         }
+
+    def normalize_prompt(self) -> Union[str, list[str]]:
+        """
+        Normalize input to standard prompt format.
+        
+        Converts simplified content format to prompt format.
+        """
+        if self.prompt is not None:
+            return self.prompt
+        elif self.content is not None:
+            return self.content
+        else:
+            raise ValueError("Either 'prompt' or 'content' must be provided")
 
 
 class CompletionLogprobs(BaseModel):

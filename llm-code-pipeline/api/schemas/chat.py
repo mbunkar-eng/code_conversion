@@ -31,15 +31,18 @@ class ChatMessage(BaseModel):
 
 class ChatCompletionRequest(BaseModel):
     """
-    Chat completion request (OpenAI-compatible).
+    Chat completion request (OpenAI-compatible or simplified).
 
-    Supports all standard parameters for chat completions.
+    Supports both full OpenAI format and simplified format with just content.
     """
-    model: str = Field(..., description="Model to use for completion")
-    messages: list[ChatMessage] = Field(
-        ...,
-        description="List of messages in the conversation",
-        min_length=1
+    model: Optional[str] = Field(None, description="Model to use for completion (optional, uses default if not specified)")
+    messages: Optional[list[ChatMessage]] = Field(
+        None,
+        description="List of messages in the conversation (OpenAI format)"
+    )
+    content: Optional[str] = Field(
+        None,
+        description="Simplified content field (alternative to messages)"
     )
     temperature: float = Field(
         default=0.7,
@@ -103,17 +106,40 @@ class ChatCompletionRequest(BaseModel):
 
     class Config:
         json_schema_extra = {
-            "example": {
-                "model": "qwen2.5-coder-7b",
-                "messages": [
-                    {"role": "system", "content": "You are a code conversion expert."},
-                    {"role": "user", "content": "Convert this Python to Java:\ndef hello():\n    print('Hello')"}
-                ],
-                "temperature": 0.2,
-                "max_tokens": 500,
-                "response_format": {"type": "json_object"}
-            }
+            "examples": [
+                {
+                    "content": "Convert this Python to Java:\ndef hello():\n    print('Hello')",
+                    "temperature": 0.2,
+                    "max_tokens": 500
+                },
+                {
+                    "model": "qwen2.5-coder-7b",
+                    "messages": [
+                        {"role": "system", "content": "You are a code conversion expert."},
+                        {"role": "user", "content": "Convert this Python to Java:\ndef hello():\n    print('Hello')"}
+                    ],
+                    "temperature": 0.2,
+                    "max_tokens": 500,
+                    "response_format": {"type": "json_object"}
+                }
+            ]
         }
+
+    def normalize_messages(self) -> list[ChatMessage]:
+        """
+        Normalize input to standard messages format.
+        
+        Converts simplified content format to full messages format.
+        """
+        if self.messages:
+            return self.messages
+        elif self.content:
+            # Convert simplified format to messages
+            return [
+                ChatMessage(role="user", content=self.content)
+            ]
+        else:
+            raise ValueError("Either 'messages' or 'content' must be provided")
 
 
 class ChatChoice(BaseModel):

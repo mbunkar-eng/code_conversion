@@ -42,19 +42,28 @@ async def create_completion(
     """
     request_id = getattr(http_request.state, "request_id", str(uuid.uuid4())[:8])
 
-    # Handle single or batch prompts
-    prompts = request.prompt if isinstance(request.prompt, list) else [request.prompt]
+    # Normalize prompt (handles both full and simplified formats)
+    prompt_input = request.normalize_prompt()
+    prompts = prompt_input if isinstance(prompt_input, list) else [prompt_input]
 
     # Validate prompts
     for i, prompt in enumerate(prompts):
         validate_prompt(prompt)
 
-    # Get inference runner for the requested model
-    from ..main import get_inference_runner
-    runner = get_inference_runner(request.model)
+    # Get inference runner for the requested model (or default)
+    from ..main import get_inference_runner, get_model_manager
+    
+    # Use provided model or get default
+    model_id = request.model
+    if model_id is None:
+        model_manager = get_model_manager()
+        model_id = model_manager.get_default_model()
+        logger.info(f"Using default model: {model_id}")
+    
+    runner = get_inference_runner(model_id)
 
     if runner is None:
-        raise InferenceError(f"Failed to load model: {request.model}")
+        raise InferenceError(f"Failed to load model: {model_id}")
 
     # Handle streaming
     if request.stream:
@@ -62,7 +71,7 @@ async def create_completion(
             raise InferenceError("Streaming not supported for batch prompts")
 
         return StreamingResponse(
-            stream_completion(request, runner, prompts[0], request_id),
+            stream_completion(request, runner, prompts[0], request_id, model_id),
             media_type="text/event-stream"
         )
 
@@ -117,7 +126,7 @@ async def create_completion(
     # Log inference metrics
     request_logger.log_inference(
         request_id=request_id,
-        model=request.model,
+        model=model_id,
         prompt_tokens=total_prompt_tokens,
         completion_tokens=total_completion_tokens,
         duration_ms=generation_time_ms
@@ -125,7 +134,7 @@ async def create_completion(
 
     # Get actual model name from loaded runner
     model_info = runner.get_model_info()
-    actual_model = model_info.get("model_path", request.model)
+    actual_model = model_info.get("model_path", model_id)
     if actual_model and "/" in actual_model:
         actual_model = actual_model.split("/")[-1]
     elif actual_model and "--" in actual_model:
@@ -138,7 +147,7 @@ async def create_completion(
         id=completion_id,
         object="text_completion",
         created=int(time.time()),
-        model=actual_model or request.model,
+        model=actual_model or model_id,
         choices=choices,
         usage=Usage(
             prompt_tokens=total_prompt_tokens,
@@ -153,7 +162,8 @@ async def stream_completion(
     request: CompletionRequest,
     runner,
     prompt: str,
-    request_id: str
+    request_id: str,
+    model_id: str
 ) -> AsyncGenerator[str, None]:
     """Generate streaming completion response."""
     from inference.vllm_runner import GenerationConfig
@@ -173,7 +183,7 @@ async def stream_completion(
             "id": completion_id,
             "object": "text_completion",
             "created": int(time.time()),
-            "model": request.model,
+            "model": model_id,
             "choices": [{
                 "text": prompt,
                 "index": 0,
@@ -189,7 +199,7 @@ async def stream_completion(
             "id": completion_id,
             "object": "text_completion",
             "created": int(time.time()),
-            "model": request.model,
+            "model": model_id,
             "choices": [{
                 "text": text_chunk,
                 "index": 0,
@@ -204,7 +214,7 @@ async def stream_completion(
         "id": completion_id,
         "object": "text_completion",
         "created": int(time.time()),
-        "model": request.model,
+        "model": model_id,
         "choices": [{
             "text": "",
             "index": 0,

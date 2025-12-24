@@ -1,6 +1,7 @@
 """
 Tokenizer Service - Handles tokenization for LLM inference.
 """
+import os
 
 import logging
 from typing import Optional, Union
@@ -55,6 +56,14 @@ class TokenizerService:
         if self._initialized:
             return
 
+        # Check if in mock mode
+        import os
+        mock_mode = os.environ.get("LLM_PIPELINE_MOCK_MODE", "false").lower() == "true"
+        if mock_mode:
+            logger.info(f"Running in MOCK MODE - skipping actual tokenizer loading for {self.model_path}")
+            self._initialized = True
+            return
+
         try:
             from transformers import AutoTokenizer
 
@@ -97,6 +106,19 @@ class TokenizerService:
         """
         if not self._initialized:
             self.initialize()
+
+        # Return mock result in mock mode
+        import os
+        mock_mode = os.environ.get("LLM_PIPELINE_MOCK_MODE", "false").lower() == "true"
+        if mock_mode:
+            # Simple mock tokenization: split by spaces and assign arbitrary token IDs
+            words = text.split()
+            mock_tokens = list(range(1, len(words) + 1))  # Simple token IDs
+            return TokenizationResult(
+                tokens=mock_tokens,
+                token_count=len(mock_tokens),
+                text=text
+            )
 
         kwargs = {
             "add_special_tokens": add_special_tokens,
@@ -170,6 +192,25 @@ class TokenizerService:
         """
         if not self._initialized:
             self.initialize()
+
+        # Return mock result in mock mode
+        import os
+        mock_mode = os.environ.get("LLM_PIPELINE_MOCK_MODE", "false").lower() == "true"
+        if mock_mode:
+            # Simple mock chat template
+            formatted_messages = []
+            for msg in messages:
+                formatted_messages.append(f"{msg.role.upper()}: {msg.content}")
+            
+            result = "\n".join(formatted_messages)
+            if add_generation_prompt:
+                result += "\nASSISTANT:"
+            
+            if tokenize:
+                # Return mock tokens
+                return list(range(1, len(result.split()) + 1))
+            else:
+                return result
 
         # Convert to dict format expected by tokenizer
         messages_dict = [

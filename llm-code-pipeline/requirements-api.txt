@@ -13,9 +13,10 @@ httpx>=0.26.0
 # HuggingFace (for tokenizer only)
 huggingface-hub>=0.20.0
 transformers>=4.36.0
+accelerate>=0.20.0
 
-# PyTorch CPU (minimal for tokenizer)
-torch>=2.1.0
+# PyTorch CPU-only (minimal for tokenizer)
+torch>=2.1.0 --index-url https://download.pytorch.org/whl/cpu
 
 # Utilities
 python-dotenv>=1.0.0
@@ -23,5 +24,5 @@ python-dotenv>=1.0.0
 # JSON Schema Validation
 jsonschema>=4.20.0
 
-# Logging
-structlog>=23.2.0
+# Streamlit UI
+streamlit>=1.28.0

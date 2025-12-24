@@ -28,6 +28,7 @@ Examples:
 import argparse
 import os
 import sys
+from pathlib import Path
 import uvicorn
 
 
@@ -114,14 +115,39 @@ def setup_environment(args):
     # Enable MPS fallback for Mac
     os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
-    # Mock mode
-    if args.mock or args.model is None:
+    # Check for available models
+    models_dir = Path("./downloaded_models")
+    available_models = []
+    if models_dir.exists():
+        for item in models_dir.iterdir():
+            if item.is_dir():
+                available_models.append(item.name)
+
+    # Mock mode logic
+    if args.mock:
         os.environ["LLM_PIPELINE_MOCK_MODE"] = "true"
-        print("Running in MOCK MODE (no real model)")
-    else:
+        print("Running in MOCK MODE (forced by --mock flag)")
+    elif args.model:
         os.environ["LLM_PIPELINE_MOCK_MODE"] = "false"
         os.environ["LLM_PIPELINE_MODEL"] = args.model
-        print(f"Using model: {args.model}")
+        print(f"Using specified model: {args.model}")
+    elif available_models:
+        # Use the first available model (prefer smaller models for speed)
+        preferred_order = ["Qwen--Qwen2-0.5B-Instruct", "Qwen--Qwen2.5-Coder-7B-Instruct", "deepseek-ai--deepseek-coder-6.7b-instruct"]
+        selected_model = None
+        for pref in preferred_order:
+            if pref in available_models:
+                selected_model = pref
+                break
+        if not selected_model:
+            selected_model = available_models[0]
+        
+        os.environ["LLM_PIPELINE_MOCK_MODE"] = "false"
+        os.environ["LLM_PIPELINE_MODEL"] = selected_model
+        print(f"Using available model: {selected_model}")
+    else:
+        os.environ["LLM_PIPELINE_MOCK_MODE"] = "true"
+        print("Running in MOCK MODE (no models available)")
 
     # Device configuration
     if args.device != "auto":
@@ -144,12 +170,18 @@ def print_banner(args):
     print(f"  Health:  http://{args.host}:{args.port}/health")
     print()
 
-    if args.mock or args.model is None:
+    mock_mode = os.environ.get("LLM_PIPELINE_MOCK_MODE", "false").lower() == "true"
+    
+    if mock_mode:
         print("  Mode:    MOCK (for testing)")
-        print("  Tip:     Use --model to run with a real model")
+        if args.mock:
+            print("  Reason:  Forced by --mock flag")
+        else:
+            print("  Reason:  No models available")
     else:
+        model = os.environ.get("LLM_PIPELINE_MODEL", "unknown")
         print(f"  Mode:    REAL INFERENCE")
-        print(f"  Model:   {args.model}")
+        print(f"  Model:   {model}")
         print(f"  Device:  {args.device}")
         print(f"  Dtype:   {args.dtype}")
 

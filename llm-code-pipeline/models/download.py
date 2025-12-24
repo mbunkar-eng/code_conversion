@@ -69,13 +69,17 @@ class ModelDownloader:
         model_name = hf_repo.replace("/", "--")
         model_path = self.models_dir / model_name
 
+        # Check if model is already fully downloaded
         if model_path.exists() and not force_download:
-            logger.info(f"Model already exists at {model_path}")
-            return DownloadResult(
-                success=True,
-                model_path=str(model_path),
-                size_gb=self._get_dir_size_gb(model_path)
-            )
+            if self._is_model_complete(model_path):
+                logger.info(f"Model already exists and is complete at {model_path}")
+                return DownloadResult(
+                    success=True,
+                    model_path=str(model_path),
+                    size_gb=self._get_dir_size_gb(model_path)
+                )
+            else:
+                logger.warning(f"Model directory exists but appears incomplete, re-downloading: {model_path}")
 
         logger.info(f"Downloading model {hf_repo} to {model_path}")
 
@@ -193,6 +197,45 @@ class ModelDownloader:
             logger.info(f"Deleted model at {model_path}")
             return True
         return False
+
+    def _is_model_complete(self, model_path: Path) -> bool:
+        """Check if a model directory contains all necessary files."""
+        # Check for essential files
+        essential_files = ["config.json", "tokenizer_config.json"]
+        for file in essential_files:
+            if not (model_path / file).exists():
+                return False
+
+        # Check for model weights (either safetensors or pytorch)
+        has_weights = False
+        for pattern in ["*.safetensors", "*.bin", "pytorch_model.bin"]:
+            if list(model_path.glob(pattern)):
+                has_weights = True
+                break
+
+        if not has_weights:
+            return False
+
+        # If there's an index file, check that all referenced files exist
+        index_file = model_path / "model.safetensors.index.json"
+        if index_file.exists():
+            try:
+                import json
+                with open(index_file, 'r') as f:
+                    index = json.load(f)
+                
+                weight_map = index.get("weight_map", {})
+                referenced_files = set(weight_map.values())
+                
+                for ref_file in referenced_files:
+                    if not (model_path / ref_file).exists():
+                        logger.warning(f"Missing referenced model file: {ref_file}")
+                        return False
+            except Exception as e:
+                logger.warning(f"Failed to parse model index file: {e}")
+                return False
+
+        return True
 
     def _get_dir_size_gb(self, path: Path) -> float:
         """Get directory size in GB."""

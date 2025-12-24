@@ -51,25 +51,36 @@ async def create_chat_completion(
     """
     request_id = getattr(http_request.state, "request_id", str(uuid.uuid4())[:8])
 
+    # Normalize messages (handles both full and simplified formats)
+    messages = request.normalize_messages()
+    
     # Validate inputs
-    validate_messages(request.messages)
+    validate_messages(messages)
     validate_response_format(request.response_format)
 
-    # Get inference runner for the requested model
-    from ..main import get_inference_runner, get_tokenizer_service
-    runner = get_inference_runner(request.model)
-    tokenizer = get_tokenizer_service(request.model)
+    # Get inference runner for the requested model (or default)
+    from ..main import get_inference_runner, get_tokenizer_service, get_model_manager
+    
+    # Use provided model or get default
+    model_id = request.model
+    if model_id is None:
+        model_manager = get_model_manager()
+        model_id = model_manager.get_default_model()
+        logger.info(f"Using default model: {model_id}")
+    
+    runner = get_inference_runner(model_id)
+    tokenizer = get_tokenizer_service(model_id)
 
     if runner is None:
-        raise InferenceError(f"Failed to load model: {request.model}")
+        raise InferenceError(f"Failed to load model: {model_id}")
 
     if tokenizer is None:
-        raise InferenceError(f"Failed to load tokenizer for model: {request.model}")
+        raise InferenceError(f"Failed to load tokenizer for model: {model_id}")
 
     # Handle streaming
     if request.stream:
         return StreamingResponse(
-            stream_chat_completion(request, runner, tokenizer, request_id),
+            stream_chat_completion(request, runner, tokenizer, request_id, model_id, messages),
             media_type="text/event-stream"
         )
 
@@ -78,7 +89,7 @@ async def create_chat_completion(
 
     tokenizer_messages = [
         TokenizerChatMessage(role=msg.role, content=msg.content)
-        for msg in request.messages
+        for msg in messages
     ]
 
     # Add JSON instruction if needed
@@ -136,7 +147,7 @@ async def create_chat_completion(
 
     # Get actual model name from loaded runner
     model_info = runner.get_model_info()
-    actual_model = model_info.get("model_path", request.model)
+    actual_model = model_info.get("model_path", model_id)
     if actual_model and "/" in actual_model:
         actual_model = actual_model.split("/")[-1]
     elif actual_model and "--" in actual_model:
@@ -149,7 +160,7 @@ async def create_chat_completion(
         id=completion_id,
         object="chat.completion",
         created=int(time.time()),
-        model=actual_model or request.model,
+        model=actual_model or model_id,
         choices=[
             ChatChoice(
                 index=0,
@@ -173,7 +184,9 @@ async def stream_chat_completion(
     request: ChatCompletionRequest,
     runner,
     tokenizer,
-    request_id: str
+    request_id: str,
+    model_id: str,
+    messages: list
 ) -> AsyncGenerator[str, None]:
     """Generate streaming chat completion response."""
     from inference.tokenizer_service import ChatMessage as TokenizerChatMessage
@@ -183,7 +196,7 @@ async def stream_chat_completion(
     # Build prompt
     tokenizer_messages = [
         TokenizerChatMessage(role=msg.role, content=msg.content)
-        for msg in request.messages
+        for msg in messages
     ]
     prompt = tokenizer.apply_chat_template(tokenizer_messages, add_generation_prompt=True)
 
@@ -192,7 +205,7 @@ async def stream_chat_completion(
         id=completion_id,
         object="chat.completion.chunk",
         created=int(time.time()),
-        model=request.model,
+        model=model_id,
         choices=[
             ChatCompletionChunkChoice(
                 index=0,
@@ -218,7 +231,7 @@ async def stream_chat_completion(
             id=completion_id,
             object="chat.completion.chunk",
             created=int(time.time()),
-            model=request.model,
+            model=model_id,
             choices=[
                 ChatCompletionChunkChoice(
                     index=0,
@@ -234,7 +247,7 @@ async def stream_chat_completion(
         id=completion_id,
         object="chat.completion.chunk",
         created=int(time.time()),
-        model=request.model,
+        model=model_id,
         choices=[
             ChatCompletionChunkChoice(
                 index=0,
